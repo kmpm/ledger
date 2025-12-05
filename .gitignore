@@ -1,7 +1,10 @@
 *.dat
 *.exe
+*.cov
+coverage.html
 bin
 pkg
 dist
+docs
 html-book
 src-book

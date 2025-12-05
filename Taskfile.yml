@@ -1,0 +1,76 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  version:
+    sh: git describe --tags --always
+  date:
+    sh: git log -1 --format=%cI
+  commit:
+    sh: git rev-parse HEAD
+  main: ./ledger/.
+  ldflags: "-X github.com/howeyc/ledger/ledger/cmd.version={{.version}}"
+
+env:
+  CGO_ENABLED: 0
+
+tasks:
+  default:
+    deps: [tidy, docs]
+    cmds:
+      - task: test
+      - task: build
+
+  info:
+    silent: true
+    cmds:
+      - echo "Version={{.version}}"
+      - echo "Date={{.date}}"
+      - echo "Commit={{.commit}}"
+    
+  run:
+    desc: Run ledger using go
+    cmds:
+      - go run -ldflags "{{.ldflags}}" {{.main}} {{.CLI_ARGS}}
+
+  build:
+    desc: Build ledger using go
+    cmds:
+      - go build -ldflags "-s -w {{.ldflags}}" -o dist/ {{.main}}
+
+  snapshot:
+    desc: Build ledger using goreleaser snapshot
+    cmds:
+      - goreleaser --skip-publish --rm-dist --snapshot
+
+  release:
+    desc: Build ledger using goreleaser release
+    cmds:
+      - goreleaser
+
+  docs:
+    desc: Build documentation
+    cmds:
+      - mkdir -p docs
+      - mandoc -Tpdf -l ledger/man/ledger.1 > docs/ledger.1.pdf
+      - mandoc -Tpdf -l ledger/man/ledger.5 > docs/ledger.5.pdf
+      - cp ledger/man/ledger.1 docs/
+      - cp ledger/man/ledger.5 docs/
+
+  test:
+    desc: Run tests with coverage
+    cmds:
+      - go test -v -coverprofile=profile.cov . ./decimal
+      - go tool cover -html=profile.cov -o coverage.html
+
+  tidy:
+    desc: Clean up dependencies and format code
+    cmds:
+      - go mod tidy
+      - go fmt ./...
+
+  clean:
+    desc: Clean up build artifacts
+    cmds:
+      - rm -rf docs dist profile.cov coverage.html
