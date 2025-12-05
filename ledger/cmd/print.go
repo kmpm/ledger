@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -317,4 +318,66 @@ func PrintCSV(generalLedger []*ledger.Transaction, filterArr []string) {
 		fmt.Fprintf(os.Stderr, "error flushing CSV buffer: %s", err)
 		return
 	}
+}
+
+func PrintJSON(generalLedger []*ledger.Transaction, accountFilters []string) {
+	filtered := filterOnAccount(generalLedger, accountFilters)
+	balance := runningBalance(filtered)
+	out := map[string]interface{}{
+		"generated_at": time.Now().Format(time.RFC3339),
+		"balance":      balance,
+		"transactions": filtered,
+	}
+	var data []byte
+	var err error
+	if indentString != "" {
+		indentString = strings.ReplaceAll(indentString, `\t`, "\t")
+		data, err = json.MarshalIndent(out, "", indentString)
+	} else {
+		data, err = json.Marshal(out)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error generating JSON output: %s", err)
+		return
+	}
+	fmt.Println(string(data))
+}
+
+func runningBalance(records []*ledger.Transaction) decimal.Decimal {
+	runningBalance := decimal.Zero
+	for _, trans := range records {
+		for _, accChange := range trans.AccountChanges {
+			runningBalance = runningBalance.Add(accChange.Balance)
+		}
+	}
+	return runningBalance
+}
+
+func filterOnAccount(records []*ledger.Transaction, accountFilters []string) []*ledger.Transaction {
+	// If no filters, return original records
+	if len(accountFilters) == 0 {
+		return records
+	}
+	filtered := make([]*ledger.Transaction, 0)
+	for _, trans := range records {
+		matchedAccounts := make([]ledger.Account, 0)
+		for _, accChange := range trans.AccountChanges {
+			inFilter := len(accountFilters) == 0
+			for _, filter := range accountFilters {
+				if strings.Contains(accChange.Name, filter) {
+					inFilter = true
+					break
+				}
+			}
+			if inFilter {
+				matchedAccounts = append(matchedAccounts, accChange)
+			}
+		}
+		if len(matchedAccounts) > 0 {
+			filteredTrans := *trans
+			filteredTrans.AccountChanges = matchedAccounts
+			filtered = append(filtered, &filteredTrans)
+		}
+	}
+	return filtered
 }
