@@ -421,6 +421,120 @@ func BenchmarkNewFromString(b *testing.B) {
 	}
 }
 
+func TestMarshalJSON(t *testing.T) {
+	testCases := []struct {
+		name     string
+		decimal  Decimal
+		expected string
+	}{
+		{"positive", NewFromFloat(123.45), `"123.450"`},
+		{"negative", NewFromFloat(-123.45), `"-123.450"`},
+		{"zero", Zero, `"0.000"`},
+		{"one", One, `"1.000"`},
+		{"only-3-decimals", NewFromFloat(5.4557), `"5.455"`},
+		{"negative-fraction", NewFromFloat(-0.43), `"-0.430"`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.decimal.MarshalJSON()
+			if err != nil {
+				t.Errorf("MarshalJSON() error = %v", err)
+				return
+			}
+			if string(result) != tc.expected {
+				t.Errorf("MarshalJSON() = %s, expected %s", string(result), tc.expected)
+			}
+		})
+	}
+}
+
+func TestUnmarshalJSON(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected Decimal
+		wantErr  bool
+	}{
+		{"positive", `"123.45"`, NewFromFloat(123.45), false},
+		{"negative", `"-123.45"`, NewFromFloat(-123.45), false},
+		{"zero", `"0.00"`, Zero, false},
+		{"one", `"1.00"`, One, false},
+		{"missing-whole", `".50"`, NewFromFloat(0.50), false},
+		{"missing-frac", `"5."`, NewFromFloat(5.0), false},
+		{"just-decimal", `"."`, Zero, false},
+		{"integer", `"42"`, NewFromInt(42), false},
+		{"negative-fraction", `"-0.43"`, NewFromFloat(-0.43), false},
+		{"invalid", `"abc"`, Zero, true},
+		{"too-big", `"10000000000000000"`, Zero, true},
+		{"empty", `""`, Zero, true},
+		{"number-positive", `123.451`, NewFromFloat(123.451), false},
+		{"number-negative", `-123.457`, NewFromFloat(-123.457), false},
+		{"number-zero", `0`, Zero, false},
+		{"null}", `null`, Zero, true},
+		{"string-big-precision", `"1.23456789"`, NewFromFloat(1.234), false},
+		{"number-big-precision", `1.23456789`, NewFromFloat(1.234), false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var result Decimal
+			err := result.UnmarshalJSON([]byte(tc.input))
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("UnmarshalJSON() expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("UnmarshalJSON() unexpected error = %v", err)
+				return
+			}
+			if result != tc.expected {
+				t.Errorf("UnmarshalJSON() = %v, expected %v", result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestJSONRoundTrip(t *testing.T) {
+	testValues := []Decimal{
+		NewFromFloat(123.45),
+		NewFromFloat(-123.45),
+		Zero,
+		One,
+		NewFromFloat(0.01),
+		NewFromFloat(-0.01),
+		NewFromInt(1000),
+		NewFromFloat(999.99),
+	}
+
+	for _, original := range testValues {
+		t.Run(original.StringFixedBank(), func(t *testing.T) {
+			// Marshal to JSON
+			data, err := original.MarshalJSON()
+			if err != nil {
+				t.Fatalf("MarshalJSON() error = %v", err)
+			}
+
+			// Unmarshal from JSON
+			var result Decimal
+			err = result.UnmarshalJSON(data)
+			if err != nil {
+				t.Fatalf("UnmarshalJSON() error = %v", err)
+			}
+
+			// The unmarshaled value should match the marshaled string representation
+			// Since MarshalJSON uses StringFixedBank (2 decimals), we compare that
+			expectedStr := original.StringFixedBank()
+			resultStr := result.StringFixedBank()
+			if resultStr != expectedStr {
+				t.Errorf("Round trip failed: expected %s, got %s", expectedStr, resultStr)
+			}
+		})
+	}
+}
+
 func BenchmarkStringFixedBank(b *testing.B) {
 	var numbers [1000]Decimal
 	for i := range len(numbers) {

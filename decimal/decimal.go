@@ -312,3 +312,36 @@ func (d Decimal) StringRound() string {
 	}
 	return strconv.FormatInt(int64(whole), 10)
 }
+
+// MarshalJSON implements the json.Marshaler interface.
+func (d Decimal) MarshalJSON() ([]byte, error) {
+	// return a quoted string with as many digits as supported
+	var buf [24]byte
+	w := len(buf)
+
+	u := uint64(d)
+	neg := d < 0
+	if neg {
+		u = -u
+	}
+
+	// fmt functions from time.Duration
+	w, u = fmtFrac(buf[:w], u, precision)
+	w = fmtInt(buf[:w], u)
+
+	if neg {
+		w--
+		buf[w] = '-'
+	}
+	return []byte(`"` + string(buf[w:]) + `"`), nil
+}
+
+func (d *Decimal) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), `"`)
+	dec, err := NewFromString(s)
+	if err != nil {
+		return err
+	}
+	*d = dec
+	return nil
+}
